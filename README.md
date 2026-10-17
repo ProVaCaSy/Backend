@@ -26,7 +26,7 @@ Nice-to-have: Statistiken, PDF-Export, Outlook-Erweiterung.
 
 | Bereich | Technologie |
 | --- | --- |
-| Sprache / Framework | Java 21, Spring Boot 3.5.x |
+| Sprache / Framework | Java 21, Spring Boot 4.1.1 |
 | API | Spring Web, Bean Validation, springdoc-openapi (Swagger UI) |
 | Sicherheit | Spring Security, OAuth2 Resource Server, Keycloak (OpenID Connect) |
 | Datenhaltung | Spring Data JPA (Hibernate), PostgreSQL (Produktion), H2 (Entwicklung), Flyway |

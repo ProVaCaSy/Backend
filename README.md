@@ -1,128 +1,84 @@
 # ProVaCaSy Backend
 
-**ProVaCaSy** (*Professoren Vacation Calendar System*) ist ein zentrales, webbasiertes System zur Verwaltung von Urlaubs- und Abwesenheitstagen von Professorinnen und Professoren. Dieses Repository enthält das **Backend** (REST-API).
+Backend der **Professoren Vacation Calendar System** (ProVaCaSy) Webanwendung der Fakultät Informationstechnik der Hochschule Esslingen. Das System verwaltet die Abwesenheiten (Urlaub, Dienstreisen, Konferenzen usw.) von Professorinnen und Professoren, damit Sekretariat und Dekanat jederzeit sehen, wer wann erreichbar ist.
 
-Entstanden im Rahmen des Software-Projekts SWB 4 (Wintersemester 2026/27) an der Hochschule Esslingen.
+Projekt im Studiengang Software Engineering (SWB 4), WS 26/27. Team: Osman Sallamaci, Tommy Luu, Dominique Sluga. Kunde: Prof. Dr. Jörg Nitzsche.
 
-> **Status:** Das Projekt befindet sich im Aufbau
-
-## Hintergrund
-
-Abwesenheiten werden an der Fakultät bisher dezentral als Outlook-Kalendereinträge geführt. Dabei kann doppelt gebucht werden (und dann doppelt als Urlaubstag zählen), und es ist nicht auf einen Blick erkennbar, wie viele der 30 Urlaubstage pro Jahr bereits verplant sind oder wer sein Kontingent überschritten hat. ProVaCaSy löst das durch eine zentrale Verwaltung mit automatischer Kontingentberechnung und Validierung gegen Doppelbuchungen.
-
-## Geplanter Funktionsumfang (MVP)
-
-- Login über **Keycloak** mit automatischer Rollenerkennung (Professor, Sekretariat, Dekanat)
-- **Professoren:** Urlaubsanträge und Abwesenheiten erstellen, bearbeiten und stornieren; Einsicht in den Team-Kalender
-- **Sekretariat:** Gesamtkalender aller Abwesenheiten der Fakultät
-- **Dekanat:** wie Sekretariat, zusätzlich Anträge prüfen, genehmigen oder ablehnen
-- Dashboard mit persönlichem Urlaubskontingent und Antragsstatus
-- Automatische Prüfung auf Doppelbuchungen im selben Zeitraum
-- E-Mail-Benachrichtigungen mit **ICS-Dateien** für den Import in Outlook (inkl. stabiler IDs für Änderungen und Stornierungen)
-
-Nice-to-have: Statistiken, PDF-Export, Outlook-Erweiterung.
-
-## Tech-Stack
+## Technologien
 
 | Bereich | Technologie |
 | --- | --- |
-| Sprache / Framework | Java 21, Spring Boot 4.1.1 |
-| API | Spring Web, Bean Validation, springdoc-openapi (Swagger UI) |
-| Sicherheit | Spring Security, OAuth2 Resource Server, Keycloak (OpenID Connect) |
-| Datenhaltung | Spring Data JPA (Hibernate), PostgreSQL (Produktion), H2 (Entwicklung), Flyway |
-| Mapping | MapStruct, Lombok |
-| Tests / Qualität | JUnit, Spring Boot Test, JaCoCo, SonarQube |
-| Betrieb | Docker, Docker Compose, GitHub Actions, GitHub Packages |
+| Sprache / Framework | Java 21, Spring Boot 4.1.1, Maven |
+| Datenbank | PostgreSQL 17 (nur PostgreSQL, keine H2), Schema über Flyway-Migrationen |
+| Persistenz | Spring Data JPA / Hibernate |
+| Authentifizierung | Keycloak 26.8.1 (OAuth2 Resource Server, Token-Prüfung über JWKS) |
+| API | API-First mit OpenAPI (`src/main/resources/openapi/provacasy-api.yaml`), Interfaces und DTOs per OpenAPI Generator beim Maven-Build, Zalando-Richtlinien |
+| Mapping | MapStruct |
+| Mail | Spring Mail, ICS-Dateien (lokal: MailHog) |
+| Feiertage | externe Feiertags-API, gespeichert in der Datenbank, Spring Cache |
+| Qualität | GitHub Actions, SonarQube, JaCoCo |
 
-## Architektur
+## Funktionen
 
-Das Backend folgt einer klassischen Schichtenarchitektur. Controller greifen nicht direkt auf die Datenbank zu, Daten werden über DTOs ausgetauscht und die Entitäten bleiben in der Service-Schicht.
+- Abwesenheiten anlegen, ändern und löschen (Professoren für sich selbst, Sekretariat und Dekanat auch für andere)
+- Genehmigungsablauf: Professoren-Einträge sind zunächst offen, Einträge von Sekretariat/Dekanat sind sofort genehmigt, Anträge können abgelehnt werden
+- Schutz vor Doppelbuchungen (Service-Prüfung und Constraint in der Datenbank)
+- Urlaubstage ohne Wochenenden und Feiertage; 24.12. und 31.12. zählen als ganze Feiertage
+- Urlaubskontingent (Standard 30 Tage), Überschreitung wird nicht blockiert, sondern in der Statistik markiert; Anpassung des Kontingents durch Sekretariat/Dekanat
+- Statistik und Export
+- Mail mit ICS-Datei (Anlegen, Ändern, Absagen) und Deeplink
+- Rollen: Professor, Sekretariat, Dekanat (aus den Keycloak-Gruppen `professors`, `staff`, `dekanat`)
 
-```
-Controller (REST, DTOs)  ->  Service (Fachlogik)  ->  Repository (Spring Data JPA)  ->  PostgreSQL
-```
+## Projektstruktur
 
-Geplante Paketstruktur:
+Basispaket `de.hs_esslingen.provacasy_backend`:
 
-```
-config/       Security, OpenAPI, CORS
-controller/   REST-Endpunkte
-service/      Geschäftslogik (Kontingent, Doppelbuchungen, ICS-Versand)
-repository/   Spring-Data-Repositories
-model/        JPA-Entitäten
-dto/          Request- und Response-Objekte
-mapper/       MapStruct-Mapper
-exception/    zentrale Fehlerbehandlung
-```
+| Paket | Inhalt |
+| --- | --- |
+| `controller` | REST-Endpunkte |
+| `service` | Fachlogik |
+| `repository` | Datenzugriff (Spring Data JPA) |
+| `model` | JPA-Entitäten und Enums |
+| `dto` | API-Objekte (generiert) |
+| `mapper` | Entität <-> DTO |
+| `exception` | Exceptions und Fehlerbehandlung |
+| `security` | Keycloak-Anbindung und Rollen |
+| `config` | Technische Konfiguration |
 
-Die vollständige Beschreibung steht in der [Dokumentation](https://github.com/ProVaCaSy/Documentation).
-
-## Voraussetzungen
-
-- Java 21 (JDK)
-- Docker und Docker Compose
-- Zugang zu einer Keycloak-Instanz (für lokale Entwicklung ist eine Instanz in Docker Compose vorgesehen)
+Details und Regeln: [docs/architecture.md](docs/architecture.md).
 
 ## Lokal starten
 
-```bash
-git clone https://github.com/ProVaCaSy/Backend.git
-cd Backend
+Voraussetzungen: JDK 21, Maven, Docker.
 
-# Entwicklungsprofil (H2-In-Memory-Datenbank)
-./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
-```
+1. Entwicklungsumgebung starten (PostgreSQL, Keycloak mit Realm `hse`, MailHog) mit der Compose-Datei `docker-compose.dev.yml` aus dem Deployment-Repository.
+2. Backend starten:
 
-Mit Docker Compose (PostgreSQL und Backend):
+   ```bash
+   mvn spring-boot:run
+   ```
 
-```bash
-docker compose up -d
-```
+Die Standardwerte in `application.properties` passen zur Entwicklungsumgebung. Sie lassen sich über Umgebungsvariablen überschreiben:
 
-### Konfiguration
-
-Einstellungen werden über Umgebungsvariablen gesetzt, damit keine Zugangsdaten im Repository liegen. Eine Vorlage liegt als `.env.example` bei, die echte `.env` wird nicht eingecheckt.
-
-| Variable | Bedeutung |
+| Variable | Standard |
 | --- | --- |
-| `SPRING_PROFILES_ACTIVE` | `dev` (H2) oder `prod` (PostgreSQL) |
-| `SPRING_DATASOURCE_URL` | JDBC-URL der Datenbank |
-| `SPRING_DATASOURCE_USERNAME` | Datenbankbenutzer |
-| `SPRING_DATASOURCE_PASSWORD` | Datenbankpasswort |
-| `SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI` | Issuer-URL des Keycloak-Realms |
+| `SPRING_DATASOURCE_URL` | `jdbc:postgresql://localhost:5432/provacasy` |
+| `SPRING_DATASOURCE_USERNAME` | `provacasy` |
+| `SPRING_DATASOURCE_PASSWORD` | `provacasy` |
+| `SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI` | `http://localhost:8080/realms/hse` |
+| `SPRING_MAIL_HOST` | `localhost` |
+| `SPRING_MAIL_PORT` | `1025` |
 
-## API-Dokumentation
+Das Datenbankschema legt Flyway beim Start an (`ddl-auto=validate`).
 
-Wenn die Anwendung läuft, ist die Swagger-Oberfläche erreichbar unter:
-
-```
-http://localhost:8080/swagger-ui/index.html
-```
-
-## Tests und Code-Qualität
+## Tests
 
 ```bash
-./mvnw verify
+mvn verify
 ```
 
-Der Befehl führt Unit- und Integrationstests aus und erzeugt den JaCoCo-Coverage-Report unter `target/site/jacoco/index.html`. Die CI-Pipeline (GitHub Actions) baut das Projekt, führt die Tests aus und übergibt die Ergebnisse an SonarQube.
-
-## Zusammenarbeit
-
-- Für jede Aufgabe gibt es ein Issue und einen eigenen Branch (z. B. `feature/12-absence-crud`).
-- Commits folgen den *Conventional Commits* (`feat:`, `fix:`, `docs:`, `test:`, `chore:`).
-- Änderungen gelangen nur per Pull Request in `main`. Voraussetzung sind eine erfolgreiche Pipeline und die Freigabe durch mindestens ein weiteres Teammitglied (Vier-Augen-Prinzip).
-- Eine Aufgabe ist erledigt, wenn die Definition of Done erfüllt ist (Umsetzung, Tests, Dokumentation, Review, Aufwand im Issue erfasst).
-
-## Weitere Repositories
-
-- [Frontend](https://github.com/ProVaCaSy/Frontend)
-- [Dokumentation](https://github.com/ProVaCaSy/Documentation)
-
-## Team
-
-Osman Sallamaci, Tommy Luu, Dominique Sluga
+Repository- und Integrationstests brauchen eine PostgreSQL-Instanz, da das Schema PostgreSQL-spezifische Funktionen nutzt.
 
 ## Lizenz
 
-Dieses Projekt steht unter der [MIT-Lizenz](LICENSE).
+MIT

@@ -1,6 +1,6 @@
 # Architektur des Backends
 
-Dieses Dokument erklärt, wie der Quellcode des ProVaCaSy-Backends aufgebaut ist, warum er so aufgebaut ist und wo neue Klassen hingehören. Es richtet sich an alle Teammitglieder und ergänzt die Beschreibung in der LaTeX-Dokumentation.
+Dieses Dokument erklärt, wie der Quellcode des ProVaCaSy-Backends aufgebaut ist, warum er so aufgebaut ist und wo neue Klassen hingehören. Es richtet sich an alle Teammitglieder und ergänzt die Beschreibung in der LaTeX-Dokumentation (Meilenstein 2, Abschnitt 5.2).
 
 Die Beschreibung der einzelnen Pakete steht zusätzlich als Javadoc in der Datei `package-info.java` des jeweiligen Pakets. Dort ist sie beim Programmieren direkt sichtbar.
 
@@ -18,34 +18,38 @@ Wir gliedern den Code nach **Schichten** und nicht nach Fachbereichen (also `con
 
 ## Paketübersicht
 
-Basispaket: `de.hsesslingen.provacasy`
+Basispaket: `de.hs_esslingen.provacasy_backend`
 
 ```
-src/main/java/de/hsesslingen/provacasy/
-├── controller/    REST-Endpunkte (Web-Schicht)
-├── service/       Fachlogik (Kontingent, Doppelbuchung, Genehmigung, ICS-Versand)
+src/main/java/de/hs_esslingen/provacasy_backend/
+├── controller/    REST-Endpunkte (Web-Schicht), implementieren die generierten API-Interfaces
+├── service/       Fachlogik (Kontingent, Doppelbuchung, Genehmigung, Statistik, ICS-Versand)
 ├── repository/    Datenzugriff mit Spring Data JPA (ersetzt klassische DAOs)
 ├── model/         JPA-Entitäten und Enums (Datenmodell)
-├── dto/           Request- und Response-Objekte der API
+├── dto/           Request- und Response-Objekte der API (aus OpenAPI generiert)
 ├── mapper/        MapStruct: Umwandlung Entität <-> DTO
 ├── exception/     Eigene Exceptions und zentrale Fehlerbehandlung
 ├── security/      Keycloak-Anbindung, Rollen, Zugriffsregeln
-└── config/        Technische Konfiguration (OpenAPI, CORS, Mail)
+└── config/        Technische Konfiguration (CORS, Cache, Mail, Feiertags-Client)
 ```
 
 | Paket | Aufgabe | Beispiele | Darf verwenden |
 | --- | --- | --- | --- |
-| `controller` | HTTP entgegennehmen, Eingaben validieren, Service aufrufen, DTO zurückgeben | `AbsenceController`, `DashboardController` | `service`, `dto` |
-| `service` | Fachliche Regeln, Transaktionen | `AbsenceService`, `VacationBalanceService`, `WorkingDayCalculator`, `IcsService` | `repository`, `model`, `mapper`, `dto`, `exception` |
-| `repository` | Datenbankzugriff | `AbsenceRepository`, `UserRepository` | `model` |
-| `model` | Abbild der Tabellen | `User`, `Absence`, `AbsenceType` | nur sich selbst |
-| `dto` | Vertrag der API | `AbsenceCreateRequest`, `AbsenceResponse` | nichts |
-| `mapper` | Felder zwischen Entität und DTO kopieren | `AbsenceMapper` | `model`, `dto` |
-| `exception` | Fehler und einheitliche Fehlerantworten | `AbsenceOverlapException`, `GlobalExceptionHandler` | nichts |
-| `security` | Token prüfen, Rollen übersetzen | `SecurityConfig`, `KeycloakJwtAuthenticationConverter` | `config` falls nötig |
-| `config` | `@Configuration`-Klassen | `OpenApiConfig`, `CorsConfig` | nichts Fachliches |
+| `controller` | HTTP entgegennehmen, Eingaben validieren, Rolle prüfen, Service aufrufen, DTO zurückgeben | `AbsenceController`, `UserController`, `StatisticsController`, `PublicHolidayController` | `service`, `dto` |
+| `service` | Fachliche Regeln, Transaktionen | `AbsenceService`, `UserService`, `StatisticsService`, `ExportService`, `PublicHolidayService`, `WorkingDayCalculator`, `MailService`, `IcsService` | `repository`, `model`, `mapper`, `dto`, `exception` |
+| `repository` | Datenbankzugriff | `AbsenceRepository`, `UserRepository`, `VacationEntitlementRepository`, `PublicHolidayRepository` | `model` |
+| `model` | Abbild der Tabellen | `User`, `Absence`, `VacationEntitlement`, `PublicHoliday`, `AbsenceStatus` | nur sich selbst |
+| `dto` | Vertrag der API (generiert) | `AbsenceCreateRequest`, `AbsenceResponse`, `StatisticsResponse` | nichts |
+| `mapper` | Felder zwischen Entität und DTO kopieren | `AbsenceMapper`, `UserMapper` | `model`, `dto` |
+| `exception` | Fehler und einheitliche Fehlerantworten | `AbsenceOverlapException`, `ResourceNotFoundException`, `GlobalExceptionHandler` | nichts |
+| `security` | Token prüfen, Gruppen in Rollen übersetzen | `SecurityConfig`, `KeycloakJwtAuthenticationConverter` | `config` falls nötig |
+| `config` | `@Configuration`-Klassen | `CorsConfig`, `CacheConfig`, `MailConfig` | nichts Fachliches |
 
-Die Klassennamen in den Beispielen sind Vorschläge und entstehen erst mit der Umsetzung.
+Die Klassennamen in den Beispielen folgen dem Entwurf aus der Dokumentation und können sich während der Umsetzung noch ändern.
+
+## API-First und generierter Code
+
+Die Schnittstelle wird zuerst in der OpenAPI-Datei `src/main/resources/openapi/provacasy-api.yaml` beschrieben (Richtlinien: Zalando RESTful API Guidelines, Pfade und Bezeichner auf Englisch). Beim Maven-Build werden daraus die API-Interfaces und die DTOs generiert. Die Controller implementieren diese Interfaces. Änderungen an der API erfolgen immer zuerst in der Spezifikation, generierter Code wird nicht von Hand bearbeitet und nicht eingecheckt.
 
 ## Abhängigkeitsregeln
 
@@ -65,17 +69,25 @@ controller  ->  service  ->  repository  ->  model
 5. **Transaktionen** (`@Transactional`) werden im Service gesetzt.
 6. **Fehler** werden im Service als Exceptions geworfen. Der `GlobalExceptionHandler` macht daraus einheitliche HTTP-Antworten.
 
-## Beispiel: Urlaub beantragen
+## Rollen und Benutzer
 
-Ablauf von `POST /api/absences`:
+- Keycloak verwaltet Benutzer, Gruppen und Rollen. Das Backend erhält das Token vom Frontend und prüft es mit dem öffentlichen Schlüssel von Keycloak (JWKS).
+- Die Gruppen `professors`, `staff` und `dekanat` aus dem Claim `groups` werden auf die Rollen Professor, Sekretariat und Dekanat abgebildet. Bei mehreren Gruppen gilt die höchste Rolle. Benutzer ohne passende Gruppe erhalten keine Rolle, das Backend lehnt ihre Anfragen mit 403 ab.
+- Endpunkte werden mit `@PreAuthorize` nach Rolle geschützt. Einschränkungen wie "Professoren nur eigene Einträge" prüft der Service.
+- Die Tabelle `app_user` ist nur eine Kopie von Name und E-Mail. Der Eintrag entsteht beim ersten Login, die Id ist die User-ID aus Keycloak.
+
+## Beispiel: Abwesenheit anlegen
+
+Ablauf von `POST /api/absences` (siehe Sequenzdiagramm in der Dokumentation, Abschnitt 5.3.2):
 
 1. Der Client sendet einen `AbsenceCreateRequest` (DTO).
 2. Spring prüft den Token (`security`) und der Controller prüft die Rolle (`@PreAuthorize`) und die Eingabe (`@Valid`).
 3. `AbsenceController` ruft `AbsenceService.create(...)` auf.
-4. `AbsenceService` zählt die Arbeitstage (`WorkingDayCalculator`), fragt über `AbsenceRepository` nach überlappenden Einträgen und prüft das Kontingent.
-5. Bei einer Doppelbuchung wirft der Service eine `AbsenceOverlapException`. Der `GlobalExceptionHandler` antwortet mit HTTP 409.
-6. Sonst speichert der Service die Entität `Absence`, wandelt sie mit dem `AbsenceMapper` in eine `AbsenceResponse` um und löst die E-Mail mit der ICS-Datei aus.
-7. Der Controller liefert die `AbsenceResponse` mit HTTP 201 zurück.
+4. `AbsenceService` prüft, dass ein Professor nur für sich einträgt, und fragt über `AbsenceRepository` nach überlappenden Einträgen (abgelehnte zählen nicht).
+5. Bei einer Doppelbuchung wirft der Service eine `AbsenceOverlapException`. Der `GlobalExceptionHandler` antwortet mit HTTP 409. Dasselbe gilt, wenn der Constraint der Datenbank bei parallelen Anfragen auslöst.
+6. Sonst zählt der `WorkingDayCalculator` die Urlaubstage ohne Wochenenden und Feiertage (Feiertage aus dem `PublicHolidayService`). Eine Überplanung blockiert nicht, sie wird nur in der Statistik markiert.
+7. Der Service speichert die Entität `Absence` (Professor für sich selbst: Status `OPEN`, Sekretariat oder Dekanat für andere: `APPROVED`), wandelt sie mit dem `AbsenceMapper` in eine `AbsenceResponse` um und löst die Mail mit ICS-Datei und Deeplink aus.
+8. Der Controller liefert die `AbsenceResponse` mit HTTP 201 zurück.
 
 ## Wohin gehört eine neue Klasse?
 
@@ -85,11 +97,11 @@ Ablauf von `POST /api/absences`:
 | eine Regel oder Berechnung enthält | `service` |
 | nur Daten aus der Datenbank holt oder speichert | `repository` |
 | eine Tabelle abbildet oder ein festes Wertepaar (Enum) ist | `model` |
-| Daten der API beschreibt | `dto` |
+| Daten der API beschreibt | OpenAPI-Spezifikation (wird zu `dto` generiert) |
 | nur Felder kopiert | `mapper` |
 | einen Fehlerfall beschreibt | `exception` |
 | mit Anmeldung oder Rollen zu tun hat | `security` |
-| nur Technik einrichtet (Bean, CORS, Swagger) | `config` |
+| nur Technik einrichtet (Bean, CORS, Cache) | `config` |
 
 Wir legen bewusst kein Paket `util` an. Hilfsklassen landen sonst schnell als Sammelbecken. Gehört eine Hilfsklasse zu einer Fachregel (z. B. der `WorkingDayCalculator`), liegt sie im `service`.
 
@@ -108,10 +120,12 @@ Die Tests liegen unter `src/test/java` in denselben Paketen wie der Code, den si
 | --- | --- |
 | `service` | Unit-Tests ohne Spring (Mockito für Repositories) |
 | `controller` | `@WebMvcTest` mit Mock-Service und Security-Test |
-| `repository` | `@DataJpaTest` |
-| gesamter Ablauf | Integrationstests mit `@SpringBootTest` |
+| `repository` | `@DataJpaTest` gegen PostgreSQL |
+| gesamter Ablauf | Integrationstests mit `@SpringBootTest` gegen PostgreSQL |
 
-Die Datenmodell-Klassen (`model`, `dto`, `config`) sind in der JaCoCo-Auswertung ausgenommen, weil sie kaum Logik enthalten.
+Das Datenbankschema nutzt PostgreSQL-Funktionen (Enum-Typ, `btree_gist`, Ausschluss-Constraint gegen Überschneidungen). Eine H2-Datenbank kann die Migration nicht ausführen, Repository- und Integrationstests laufen deshalb gegen eine echte PostgreSQL-Instanz (z. B. als Container).
+
+Die Datenmodell-Klassen (`model`, `config`) und der generierte Code (`dto`, API-Interfaces) sind in der JaCoCo-Auswertung ausgenommen, weil sie kaum Logik enthalten.
 
 ## Wie das Dokument gepflegt wird
 

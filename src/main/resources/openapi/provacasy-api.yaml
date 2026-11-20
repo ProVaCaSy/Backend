@@ -1,14 +1,27 @@
 openapi: 3.0.3
 info:
   title: ProVaCaSy API
+  version: 0.1.0
   description: >-
-    Schnittstelle für die ProVaCaSy Webanwendung. Die API ist in der OpenAPI 3.0 Spezifikation beschrieben.
-  version: 0.0.1
+    REST API for the Professoren Vacation Calendar System (ProVaCaSy).
+    All operations require a valid Keycloak access token. Authorization is
+    enforced by the backend; UI restrictions are not a security boundary.
+    Dates are calendar dates (not timestamps). Endpoints below are relative
+    to the /api server prefix.
 servers:
   - url: /api
+    description: API base path (same origin or reverse-proxy routing)
 tags:
   - name: users
-    description: Benutzer und aktuelle Rolle
+    description: Current user and user lookup
+  - name: absences
+    description: Absence entries, approvals and iCalendar files
+  - name: statistics
+    description: Vacation statistics and exports
+  - name: vacation-entitlements
+    description: Vacation entitlements by user and year
+  - name: public-holidays
+    description: Public holidays in Baden-Wuerttemberg
 security:
   - bearerAuth: []
 paths:
@@ -16,42 +29,523 @@ paths:
     get:
       tags: [users]
       operationId: getCurrentUser
-      summary: Aktuell angemeldeten Benutzer abrufen
+      summary: Get the currently authenticated user
+      description: >-
+        Creates the local user on first login or updates their name and email
+        from the token. A valid Keycloak user without an application group may
+        call this operation and receives role null. Other business operations
+        remain forbidden to users without a supported application role.
       responses:
         '200':
-          description: Benutzer mit Rolle
+          description: Current user and their effective application role
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/User'
         '401':
-          $ref: '#/components/responses/Problem'
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /users:
+    get:
+      tags: [users]
+      operationId: searchUsers
+      summary: Search users by first or last name
+      description: Only SECRETARIAT and DEAN may search users.
+      parameters:
+        - name: search
+          in: query
+          required: true
+          description: Case-insensitive part of a first or last name
+          schema:
+            type: string
+            minLength: 1
+          example: Jost
+      responses:
+        '200':
+          description: Matching users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '403':
-          $ref: '#/components/responses/Problem'
+          $ref: '#/components/responses/Forbidden'
+
+  /absences:
+    get:
+      tags: [absences]
+      operationId: listAbsences
+      summary: List absences for a calendar period
+      description: >-
+        Returns faculty absences that overlap the requested inclusive date
+        interval. All three application roles may view the faculty calendar.
+        Optionally filters by status (for example OPEN for pending requests).
+      parameters:
+        - $ref: '#/components/parameters/FromDate'
+        - $ref: '#/components/parameters/ToDate'
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/AbsenceStatus'
+      responses:
+        '200':
+          description: Matching absence entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Absence'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [absences]
+      operationId: createAbsence
+      summary: Create an absence
+      description: >-
+        PROFESSOR may create only their own absences, initially OPEN.
+        SECRETARIAT and DEAN may create entries for other users, which are
+        immediately APPROVED. Dates must be valid and must not overlap an
+        existing non-rejected absence of the affected user. An ICS email is
+        sent after successful creation. The backend computes vacation days.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AbsenceCreateRequest'
+      responses:
+        '201':
+          description: Created absence
+          headers:
+            Location:
+              description: Relative URL of the created absence
+              schema:
+                type: string
+              example: /api/absences/42
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Absence'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /absences/approve-all:
+    post:
+      tags: [absences]
+      operationId: approveAllAbsences
+      summary: Approve all currently open absences
+      description: >-
+        DEAN only. Approves open requests and sends an ICS email for each
+        successfully approved request. The frontend asks for confirmation
+        before invoking this operation.
+      responses:
+        '200':
+          description: Approved absences (possibly empty)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Absence'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /absences/{id}:
+    parameters:
+      - $ref: '#/components/parameters/AbsenceId'
+    put:
+      tags: [absences]
+      operationId: updateAbsence
+      summary: Update an absence
+      description: >-
+        PROFESSOR may edit only their own OPEN entries; SECRETARIAT and DEAN
+        may edit entries subject to backend workflow rules. The status is
+        not set directly by the client. Re-checks overlap, increases the
+        version and sends an updated ICS file.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AbsenceUpdateRequest'
+      responses:
+        '200':
+          description: Updated absence
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Absence'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+    delete:
+      tags: [absences]
+      operationId: deleteAbsence
+      summary: Cancel an absence
+      description: >-
+        PROFESSOR may delete only their own OPEN entries. The backend enforces
+        additional workflow permissions for SECRETARIAT and DEAN and sends a
+        cancellation ICS file when appropriate.
+      responses:
+        '204':
+          description: Absence deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /absences/{id}/approve:
+    parameters:
+      - $ref: '#/components/parameters/AbsenceId'
+    post:
+      tags: [absences]
+      operationId: approveAbsence
+      summary: Approve an open absence request
+      description: DEAN only. Changes OPEN to APPROVED and sends an ICS email.
+      responses:
+        '200':
+          description: Approved absence
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Absence'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /absences/{id}/reject:
+    parameters:
+      - $ref: '#/components/parameters/AbsenceId'
+    post:
+      tags: [absences]
+      operationId: rejectAbsence
+      summary: Reject an open or already approved absence
+      description: >-
+        DEAN only. Marks the absence REJECTED and notifies the affected user.
+        A rejected entry does not count toward vacation days or overlaps.
+        Confirmation by the affected user and subsequent deletion require
+        separate workflow design (see docs/openapi-explained.md).
+      responses:
+        '200':
+          description: Rejected absence
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Absence'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /absences/{id}/ics:
+    parameters:
+      - $ref: '#/components/parameters/AbsenceId'
+    get:
+      tags: [absences]
+      operationId: downloadAbsenceIcs
+      summary: Download an absence as an iCalendar file
+      description: >-
+        The backend checks that the user may access the requested entry.
+        The UID is stable for the absence and the ICS SEQUENCE reflects its
+        version, allowing calendar applications to process updates.
+      responses:
+        '200':
+          description: iCalendar attachment
+          headers:
+            Content-Disposition:
+              description: Suggested download filename
+              schema:
+                type: string
+              example: attachment; filename="absence-42.ics"
+          content:
+            text/calendar:
+              schema:
+                type: string
+              example: "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nEND:VCALENDAR\r\n"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /statistics:
+    get:
+      tags: [statistics]
+      operationId: getStatistics
+      summary: Get vacation statistics
+      description: >-
+        PROFESSOR receives only personal statistics; SECRETARIAT and DEAN
+        receive the faculty overview. Open and approved absences count;
+        rejected absences do not. The backend applies the year-selection
+        rules of the user's role.
+      parameters:
+        - $ref: '#/components/parameters/Year'
+      responses:
+        '200':
+          description: Statistics for the requested or current year
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatisticsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /statistics/export:
+    get:
+      tags: [statistics]
+      operationId: exportStatistics
+      summary: Export faculty statistics as CSV or PDF
+      description: Only SECRETARIAT and DEAN may export statistics.
+      parameters:
+        - $ref: '#/components/parameters/Year'
+        - name: type
+          in: query
+          required: true
+          description: Desired export format
+          schema:
+            type: string
+            enum: [csv, pdf]
+      responses:
+        '200':
+          description: Export file in the selected format
+          content:
+            text/csv:
+              schema:
+                type: string
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /vacation-entitlements/{userId}:
+    put:
+      tags: [vacation-entitlements]
+      operationId: setVacationEntitlement
+      summary: Set a user's vacation entitlement for a year
+      description: >-
+        SECRETARIAT only. Sets the entitlement of a user for the current
+        year; previous years are unaffected. Default entitlement is 30 days
+        when no previous year value exists.
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          description: Keycloak user UUID
+          schema:
+            type: string
+            format: uuid
+        - name: year
+          in: query
+          required: true
+          description: Year to update (backend restricts to current year)
+          schema:
+            type: integer
+            minimum: 2000
+            maximum: 9999
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VacationEntitlementRequest'
+      responses:
+        '200':
+          description: Updated entitlement
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VacationEntitlement'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /public-holidays:
+    get:
+      tags: [public-holidays]
+      operationId: listPublicHolidays
+      summary: List holidays in Baden-Wuerttemberg
+      description: >-
+        Returns legal public holidays for Baden-Wuerttemberg and also
+        December 24 and 31 as complete non-working days. The backend loads
+        and caches the holidays for the requested year.
+      parameters:
+        - $ref: '#/components/parameters/Year'
+      responses:
+        '200':
+          description: Holidays for the year
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PublicHoliday'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
+      description: Keycloak OIDC access token in the Authorization header.
+
+  parameters:
+    AbsenceId:
+      name: id
+      in: path
+      required: true
+      description: Database identifier of the absence
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+    FromDate:
+      name: from
+      in: query
+      required: true
+      description: Inclusive start date
+      schema:
+        type: string
+        format: date
+    ToDate:
+      name: to
+      in: query
+      required: true
+      description: Inclusive end date (must not precede from)
+      schema:
+        type: string
+        format: date
+    Year:
+      name: year
+      in: query
+      required: false
+      description: Calendar year; defaults to the current year
+      schema:
+        type: integer
+        minimum: 2000
+        maximum: 9999
+
   responses:
-    Problem:
-      description: Fehler (RFC 9457)
+    BadRequest:
+      description: Invalid input or parameter
       content:
         application/problem+json:
           schema:
             $ref: '#/components/schemas/Problem'
+    Unauthorized:
+      description: Missing, expired, or invalid access token
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Forbidden:
+      description: Insufficient application role or resource permission
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    NotFound:
+      description: Requested resource not found
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Conflict:
+      description: Date overlap, invalid status transition, or concurrent update
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    ServerError:
+      description: Unexpected server error
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+
   schemas:
     Role:
       type: string
+      description: >-
+        Effective business role derived from Keycloak groups.
+        Priority is DEAN, then SECRETARIAT, then PROFESSOR.
       enum: [PROFESSOR, SECRETARIAT, DEAN]
+
     User:
       type: object
-      required: [id, first_name, last_name, email]
+      description: >-
+        User data mirrored from Keycloak at first login and on subsequent
+        logins. A signed-in user without a business group has a null role.
+      required: [id, first_name, last_name, email, role]
       properties:
         id:
           type: string
           format: uuid
+          description: Keycloak subject (sub)
         first_name:
           type: string
         last_name:
@@ -60,15 +554,212 @@ components:
           type: string
           format: email
         role:
-          $ref: '#/components/schemas/Role'
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/Role'
+
+    AbsenceStatus:
+      type: string
+      enum: [OPEN, APPROVED, REJECTED]
+
+    AbsenceCreateRequest:
+      type: object
+      required: [start_date, end_date]
+      description: >-
+        If user_id is absent, the current user is the affected user.
+        Providing another user_id is permitted only for SECRETARIAT or DEAN.
+      properties:
+        user_id:
+          type: string
+          format: uuid
+          description: Affected user; optional for self-service requests
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
+        title:
+          type: string
+          maxLength: 255
+          nullable: true
+      example:
+        start_date: '2026-12-01'
+        end_date: '2026-12-04'
+        title: Vacation
+
+    AbsenceUpdateRequest:
+      type: object
+      required: [start_date, end_date]
+      description: >-
+        Replaces the editable date and title fields. The client cannot set
+        status, version, creator, or affected user through this request.
+      properties:
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
+        title:
+          type: string
+          maxLength: 255
+          nullable: true
+
+    Absence:
+      type: object
+      description: Persisted absence, including its current workflow status.
+      required: [id, user_id, created_from, start_date, end_date, status, version, created_at]
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 42
+        user_id:
+          type: string
+          format: uuid
+          description: Affected user
+        created_from:
+          type: string
+          format: uuid
+          description: User who created the entry
+        updated_from:
+          type: string
+          format: uuid
+          nullable: true
+          description: Last user who changed the entry
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
+        title:
+          type: string
+          maxLength: 255
+          nullable: true
+        status:
+          $ref: '#/components/schemas/AbsenceStatus'
+        version:
+          type: integer
+          minimum: 0
+          description: Incremented on each change; also used as ICS SEQUENCE
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    VacationEntitlementRequest:
+      type: object
+      required: [days]
+      properties:
+        days:
+          type: integer
+          minimum: 0
+          maximum: 32767
+          example: 30
+
+    VacationEntitlement:
+      type: object
+      required: [user_id, year, days]
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        year:
+          type: integer
+        days:
+          type: integer
+          minimum: 0
+
+    VacationStatistics:
+      type: object
+      description: Per-user vacation totals for a calendar year
+      required: [user_id, entitlement_days, used_days, remaining_days, overplanned]
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        entitlement_days:
+          type: integer
+          description: Entitled vacation days
+        used_days:
+          type: integer
+          description: Open plus approved vacation days (excluding non-working days)
+        remaining_days:
+          type: integer
+          description: Entitlement minus used days; may be negative
+        overplanned:
+          type: boolean
+          description: True when remaining_days is negative
+        days_by_month:
+          type: array
+          description: Monthly breakdown used by the faculty statistics view
+          items:
+            $ref: '#/components/schemas/MonthlyVacationDays'
+
+    MonthlyVacationDays:
+      type: object
+      required: [month, days]
+      properties:
+        month:
+          type: integer
+          minimum: 1
+          maximum: 12
+        days:
+          type: integer
+          minimum: 0
+
+    StatisticsResponse:
+      type: object
+      description: >-
+        The current user's statistics or the faculty overview, depending
+        on permissions. The personal view contains one item.
+      required: [year, users]
+      properties:
+        year:
+          type: integer
+        users:
+          type: array
+          items:
+            $ref: '#/components/schemas/VacationStatistics'
+
+    PublicHoliday:
+      type: object
+      required: [date, name]
+      properties:
+        date:
+          type: string
+          format: date
+        name:
+          type: string
+      example:
+        date: '2026-12-25'
+        name: Christmas Day
+
     Problem:
       type: object
+      description: Problem Details (RFC 9457)
+      required: [type, title, status]
       properties:
         type:
           type: string
+          description: Problem type URI
+          example: about:blank
         title:
           type: string
+          example: Forbidden
         status:
           type: integer
+          minimum: 400
+          maximum: 599
+          example: 403
         detail:
           type: string
+          description: Human-readable explanation
+        instance:
+          type: string
+          description: Request-specific URI

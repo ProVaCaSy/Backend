@@ -184,7 +184,7 @@
 								<useSpringBoot4>true</useSpringBoot4>
 								<useBeanValidation>true</useBeanValidation>
 								<useTags>true</useTags>
-								<openApiNullable>true</openApiNullable>
+								<openApiNullable>false</openApiNullable>
 								<skipDefaultInterface>true</skipDefaultInterface>
 								<documentationProvider>none</documentationProvider>
 								<annotationLibrary>none</annotationLibrary>

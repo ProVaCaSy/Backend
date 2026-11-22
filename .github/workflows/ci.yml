@@ -12,6 +12,9 @@ jobs:
   build-test:
     name: Build und Tests
     runs-on: ubuntu-latest
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
     services:
       postgres:
         image: postgres:17
@@ -28,6 +31,8 @@ jobs:
           --health-retries 10
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
@@ -35,6 +40,12 @@ jobs:
           cache: maven
       - name: Bauen und testen
         run: ./mvnw -B verify
+      - name: SonarQube Analyse
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && env.SONAR_TOKEN != ''
+        run: >-
+          ./mvnw -B org.sonarsource.scanner.maven:sonar-maven-plugin:5.1.0.4751:sonar
+          -Dsonar.projectKey=provacasy-backend
+          -Dsonar.qualitygate.wait=true
 
   image:
     name: Docker Image nach GitHub Packages

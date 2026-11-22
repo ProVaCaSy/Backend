@@ -210,7 +210,7 @@ Authorization: Bearer <access-token>
 Accept: application/json
 ```
 
-`localhost:8081` ist in diesem Beispiel **nur ein Beispielport**. Der tatsächliche Port des Spring-Boot-Backends hängt von eurer Laufzeitkonfiguration ab. Ein gültiger Keycloak-Token ist erforderlich.
+`localhost:8081` ist der lokale Port des Backends (`server.port` in `application.properties`). Ein gültiger Keycloak-Token ist erforderlich.
 
 ## Tests und Done-Kriterien
 

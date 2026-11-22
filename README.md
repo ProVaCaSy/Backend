@@ -55,13 +55,18 @@ Voraussetzungen: JDK 21, Maven, Docker.
 2. Backend starten:
 
    ```bash
-   mvn spring-boot:run
+   ./mvnw spring-boot:run
    ```
+
+   Unter Windows (PowerShell): `.\mvnw.cmd spring-boot:run`
+
+Das Backend läuft lokal auf http://localhost:8081, weil Keycloak in der Entwicklungsumgebung Port 8080 belegt. Im Container setzt `docker-compose.yml` den Port auf 8080.
 
 Die Standardwerte in `application.properties` passen zur Entwicklungsumgebung. Sie lassen sich über Umgebungsvariablen überschreiben:
 
 | Variable | Standard |
 | --- | --- |
+| `SERVER_PORT` | `8081` |
 | `SPRING_DATASOURCE_URL` | `jdbc:postgresql://localhost:5432/provacasy` |
 | `SPRING_DATASOURCE_USERNAME` | `provacasy` |
 | `SPRING_DATASOURCE_PASSWORD` | `provacasy` |

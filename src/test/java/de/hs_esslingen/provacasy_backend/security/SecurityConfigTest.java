@@ -1,8 +1,8 @@
 
 package de.hs_esslingen.provacasy_backend.security;
 
-import de.hs_esslingen.provacasy_backend.controller.UserController;
-import de.hs_esslingen.provacasy_backend.service.UserService;
+import de.hs_esslingen.provacasy_backend.user.UserController;
+import de.hs_esslingen.provacasy_backend.user.UserService;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;

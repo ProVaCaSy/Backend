@@ -1,5 +1,5 @@
 
-package de.hs_esslingen.provacasy_backend.model;
+package de.hs_esslingen.provacasy_backend.user;
 
 import java.util.UUID;
 

@@ -1,5 +1,5 @@
 
-package de.hs_esslingen.provacasy_backend.controller;
+package de.hs_esslingen.provacasy_backend.user;
 
 import java.util.List;
 
@@ -16,7 +16,6 @@ import org.springframework.web.server.ResponseStatusException;
 import de.hs_esslingen.provacasy_backend.api.UsersApi;
 import de.hs_esslingen.provacasy_backend.dto.Role;
 import de.hs_esslingen.provacasy_backend.dto.User;
-import de.hs_esslingen.provacasy_backend.service.UserService;
 
 @RestController
 @RequestMapping("/api")
@@ -43,7 +42,7 @@ public class UserController implements UsersApi {
         }
 
         // Benutzer in PostgreSQL anlegen / aktualisieren
-        de.hs_esslingen.provacasy_backend.model.User savedUser =
+        de.hs_esslingen.provacasy_backend.user.User savedUser =
                 userService.syncCurrentUser(jwtAuth.getToken());
 
         // Fachrolle bestimmen

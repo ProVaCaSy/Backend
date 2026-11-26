@@ -1,8 +1,5 @@
 
-package de.hs_esslingen.provacasy_backend.service;
-
-import de.hs_esslingen.provacasy_backend.model.User;
-import de.hs_esslingen.provacasy_backend.repository.UserRepository;
+package de.hs_esslingen.provacasy_backend.user;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

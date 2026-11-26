@@ -1,14 +1,11 @@
 
-package de.hs_esslingen.provacasy_backend.service;
+package de.hs_esslingen.provacasy_backend.user;
 
 import java.util.UUID;
 
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import de.hs_esslingen.provacasy_backend.model.User;
-import de.hs_esslingen.provacasy_backend.repository.UserRepository;
 
 @Service
 public class UserService {

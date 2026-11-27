@@ -59,35 +59,51 @@ public interface AbsenceRepository extends JpaRepository<Absence, Long> {
     /** Alle Abwesenheiten mit einem Status, zum Beispiel die offenen Anträge für das Dekanat. */
     List<Absence> findByStatusOrderByStartDateAsc(AbsenceStatus status);
 
-    // "count(a) > 0" liefert direkt true oder false. Wir brauchen nur "gibt es eine?",
-    // nicht die Einträge selbst, das ist schneller.
-    // a.user = :user vergleicht über den Primärschlüssel, also die user_id.
-    // Enum Konstanten muss man in JPQL mit vollem Paketnamen schreiben.
+    // Warum default Methode plus Abfrage mit Parameter statt einer festen Konstante?
+    // Eine Enum Konstante direkt in JPQL (a.status <> ...AbsenceStatus.REJECTED) schreibt
+    // Hibernate als 'REJECTED'::AbsenceStatus ins SQL, also mit dem Java Klassennamen als Typ.
+    // Unser PostgreSQL Typ heißt aber absence_status, das ergab "type absencestatus does not
+    // exist" (gefunden durch AbsenceRepositoryTest). Als Parameter übergeben klappt es, deshalb
+    // geben die default Methoden REJECTED als Parameter an die Abfrage weiter. Für den Service
+    // bleiben die Methoden einfach: existsOverlap(user, start, end).
     /**
      * Gibt es für diese Person schon eine Abwesenheit, die sich mit start bis end überschneidet?
      * Abgelehnte Einträge zählen nicht. Für das Anlegen (POST /api/absences).
      * Die Datenbank sichert das zusätzlich mit dem Constraint absence_no_overlap ab.
      */
-    @Query("""
-            select count(a) > 0 from Absence a
-            where a.user = :user
-              and a.status <> de.hs_esslingen.provacasy_backend.absence.AbsenceStatus.REJECTED
-              and a.startDate <= :end and a.endDate >= :start
-            """)
-    boolean existsOverlap(@Param("user") User user, @Param("start") LocalDate start,
-                          @Param("end") LocalDate end);
+    default boolean existsOverlap(User user, LocalDate start, LocalDate end) {
+        return countOverlaps(user, start, end, AbsenceStatus.REJECTED) > 0;
+    }
 
     /**
      * Wie existsOverlap, aber ohne den Eintrag mit der id excludedId.
      * Für das Ändern (PUT /api/absences/{id}), sonst würde sich der Eintrag mit sich selbst überschneiden.
      */
+    default boolean existsOverlapExcluding(User user, LocalDate start, LocalDate end, Long excludedId) {
+        return countOverlapsExcluding(user, start, end, excludedId, AbsenceStatus.REJECTED) > 0;
+    }
+
+    // count(a) zählt nur, wir brauchen die Einträge selbst nicht, das ist schneller.
+    // a.user = :user vergleicht über den Primärschlüssel, also die user_id.
+    /** Anzahl der Abwesenheiten dieser Person zwischen start und end, ohne den Status ignored. */
     @Query("""
-            select count(a) > 0 from Absence a
+            select count(a) from Absence a
             where a.user = :user
-              and a.id <> :excludedId
-              and a.status <> de.hs_esslingen.provacasy_backend.absence.AbsenceStatus.REJECTED
+              and a.status <> :ignored
               and a.startDate <= :end and a.endDate >= :start
             """)
-    boolean existsOverlapExcluding(@Param("user") User user, @Param("start") LocalDate start,
-                                   @Param("end") LocalDate end, @Param("excludedId") Long excludedId);
+    long countOverlaps(@Param("user") User user, @Param("start") LocalDate start,
+                       @Param("end") LocalDate end, @Param("ignored") AbsenceStatus ignored);
+
+    /** Wie countOverlaps, aber ohne den Eintrag mit der id excludedId. */
+    @Query("""
+            select count(a) from Absence a
+            where a.user = :user
+              and a.id <> :excludedId
+              and a.status <> :ignored
+              and a.startDate <= :end and a.endDate >= :start
+            """)
+    long countOverlapsExcluding(@Param("user") User user, @Param("start") LocalDate start,
+                                @Param("end") LocalDate end, @Param("excludedId") Long excludedId,
+                                @Param("ignored") AbsenceStatus ignored);
 }

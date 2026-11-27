@@ -6,6 +6,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 import de.hs_esslingen.provacasy_backend.exception.InvalidRequestException;
+import de.hs_esslingen.provacasy_backend.user.UserService;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -18,8 +19,11 @@ class AbsenceServiceTest {
     private final AbsenceMapper mapper =
             mock(AbsenceMapper.class);
 
+    private final UserService userService =
+            mock(UserService.class);
+
     private final AbsenceService service =
-            new AbsenceService(repository, mapper);
+            new AbsenceService(repository, mapper, userService);
 
     private final LocalDate from = LocalDate.of(2026, 12, 1);
     private final LocalDate to = LocalDate.of(2026, 12, 31);
@@ -78,7 +82,7 @@ class AbsenceServiceTest {
                 () -> service.listAbsences(to, from, null)
         );
 
-        verifyNoInteractions(repository, mapper);
+        verifyNoInteractions(repository, mapper, userService);
     }
 
     @Test
@@ -94,7 +98,7 @@ class AbsenceServiceTest {
                 () -> service.listAbsences(from, null, null)
         );
 
-        verifyNoInteractions(repository, mapper);
+        verifyNoInteractions(repository, mapper, userService);
     }
 
     @Test

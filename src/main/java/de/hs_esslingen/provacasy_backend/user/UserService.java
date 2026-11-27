@@ -1,4 +1,3 @@
-
 package de.hs_esslingen.provacasy_backend.user;
 
 import java.util.UUID;
@@ -6,6 +5,8 @@ import java.util.UUID;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import de.hs_esslingen.provacasy_backend.exception.InvalidRequestException;
 
 @Service
 public class UserService {
@@ -37,7 +38,17 @@ public class UserService {
         return userRepository.save(user);
     }
 
+    @Transactional(readOnly = true)
+    public User findById(UUID id) {
+
+        return userRepository.findById(id)
+                .orElseThrow(() -> new InvalidRequestException(
+                        "User with ID " + id + " was not found."
+                ));
+    }
+
     private String requiredClaim(Jwt jwt, String name) {
+
         String value = jwt.getClaimAsString(name);
 
         if (value == null || value.isBlank()) {

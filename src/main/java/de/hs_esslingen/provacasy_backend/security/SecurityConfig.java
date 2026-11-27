@@ -3,7 +3,7 @@ package de.hs_esslingen.provacasy_backend.security;
 
 import java.util.List;
 
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -14,6 +14,7 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import org.springframework.web.servlet.HandlerExceptionResolver;
 
 @Configuration
 @EnableMethodSecurity
@@ -25,7 +26,9 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
-            KeycloakJwtAuthenticationConverter roleConverter
+            KeycloakJwtAuthenticationConverter roleConverter,
+            @Qualifier("handlerExceptionResolver")
+            HandlerExceptionResolver exceptionResolver
     ) throws Exception {
 
         http
@@ -57,6 +60,15 @@ public class SecurityConfig {
                     "SECRETARIAT",
                     "DEAN"
                 )
+            )
+
+            .exceptionHandling(exceptions -> exceptions
+                .accessDeniedHandler((request, response, exception) -> {
+                    if (exceptionResolver.resolveException(
+                            request, response, null, exception) == null) {
+                        response.sendError(403);
+                    }
+                })
             )
 
             .oauth2ResourceServer(oauth ->

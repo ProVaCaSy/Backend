@@ -12,8 +12,23 @@ import de.hs_esslingen.provacasy_backend.user.User;
 /**
  * Datenzugriff auf die Tabelle absence. Enthält nur Abfragen, die Regeln stehen im AbsenceService.
  */
+// Nur ein Interface, keine Klasse: Spring Data erzeugt beim Start selbst eine Klasse, die es
+// umsetzt, und stellt sie als Bean bereit. Der Service bekommt sie per Konstruktor.
+// JpaRepository<Absence, Long>: Entity Typ und Typ des Primärschlüssels. Damit gibt es
+// geschenkt: save(), findById(), findAll(), deleteById(), count() usw.
 public interface AbsenceRepository extends JpaRepository<Absence, Long> {
 
+    // @Query enthält JPQL, nicht SQL: Man fragt nach Klassen und Feldern (Absence, a.startDate),
+    // nicht nach Tabellen und Spalten (absence, start_date). Hibernate übersetzt das in SQL.
+    // :from und :to sind Platzhalter, @Param verbindet sie mit den Methodenparametern.
+    // Spring prüft die Abfrage schon beim Start. Ein Tippfehler fällt also sofort auf.
+    //
+    // Überschneidung zweier Zeiträume: A überschneidet B, wenn A beginnt, bevor B endet, und
+    // A endet, nachdem B begonnen hat. Mit <= und >= zählen auch Zeiträume, die sich nur an
+    // einem Tag berühren (wie daterange '[]' in der Datenbank).
+    //
+    // join fetch: Lädt die User in derselben Abfrage mit. Ohne das gäbe es wegen LAZY für jeden
+    // Eintrag eine eigene Abfrage, sobald der Kalender den Namen braucht (das "N+1 Problem").
     /**
      * Alle Abwesenheiten, die den Zeitraum from bis to berühren (für den Kalender, GET /api/absences).
      * Eine Abwesenheit berührt den Zeitraum, wenn sie vor dessen Ende beginnt und nach dessen Anfang endet.
@@ -37,9 +52,17 @@ public interface AbsenceRepository extends JpaRepository<Absence, Long> {
     List<Absence> findInPeriodWithStatus(@Param("from") LocalDate from, @Param("to") LocalDate to,
                                          @Param("status") AbsenceStatus status);
 
+    // Abgeleitete Abfrage (derived query), ganz ohne @Query: Spring liest den Methodennamen.
+    // findBy...      = select ... where
+    // Status         = a.status = ?
+    // OrderBy...Asc  = order by a.startDate aufsteigend
     /** Alle Abwesenheiten mit einem Status, zum Beispiel die offenen Anträge für das Dekanat. */
     List<Absence> findByStatusOrderByStartDateAsc(AbsenceStatus status);
 
+    // "count(a) > 0" liefert direkt true oder false. Wir brauchen nur "gibt es eine?",
+    // nicht die Einträge selbst, das ist schneller.
+    // a.user = :user vergleicht über den Primärschlüssel, also die user_id.
+    // Enum Konstanten muss man in JPQL mit vollem Paketnamen schreiben.
     /**
      * Gibt es für diese Person schon eine Abwesenheit, die sich mit start bis end überschneidet?
      * Abgelehnte Einträge zählen nicht. Für das Anlegen (POST /api/absences).

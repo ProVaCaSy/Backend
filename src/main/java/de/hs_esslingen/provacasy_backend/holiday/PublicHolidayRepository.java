@@ -8,11 +8,15 @@ import org.springframework.data.jpa.repository.JpaRepository;
 /**
  * Datenzugriff auf die Tabelle public_holiday (Zwischenspeicher der Feiertags-API).
  */
+// Der Primärschlüssel ist das Datum, deshalb LocalDate als zweiter Typparameter.
 public interface PublicHolidayRepository extends JpaRepository<PublicHoliday, LocalDate> {
 
+    // Abgeleitete Abfrage: "Between" heißt where holidayDate between ? and ?,
+    // die Parameter werden der Reihe nach eingesetzt (from, to). Beide Grenzen zählen mit.
     /** Alle Feiertage zwischen from und to (beide eingeschlossen), zum Beispiel für ein ganzes Jahr. */
     List<PublicHoliday> findByHolidayDateBetweenOrderByHolidayDate(LocalDate from, LocalDate to);
 
+    // "exists" statt "find": Es interessiert nur, ob es mindestens einen Treffer gibt.
     /** Sind für diesen Zeitraum schon Feiertage gespeichert? Wenn nicht, holt der Service sie von der API. */
     boolean existsByHolidayDateBetween(LocalDate from, LocalDate to);
 }

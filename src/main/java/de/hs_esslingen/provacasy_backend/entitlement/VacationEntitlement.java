@@ -26,21 +26,28 @@ import lombok.Setter;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class VacationEntitlement {
 
+    // @EmbeddedId: Der Primärschlüssel ist ein Objekt mit zwei Feldern (siehe VacationEntitlementId).
     /** Primärschlüssel aus user_id und year. */
     @EmbeddedId
     private VacationEntitlementId id;
 
+    // Problem: Die Spalte user_id gehört zweimal hierher, einmal als Teil des Schlüssels und
+    // einmal als Fremdschlüssel auf app_user. @MapsId("userId") sagt Hibernate: Das ist dieselbe
+    // Spalte, nimm die ID des Users als userId im Schlüssel. So gibt es keine doppelte Spalte.
     /** Wessen Anspruch das ist (Beziehung "hat"). Füllt den Teil userId des Schlüssels. */
     @MapsId("userId")
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "user_id", nullable = false, updatable = false)
     private User user;
 
+    // Short, weil die Spalte smallint ist. Nur days hat einen Setter: Benutzer und Jahr
+    // sind der Schlüssel und ändern sich nie.
     /** Anzahl der Urlaubstage, nicht negativ (Constraint vacation_entitlement_days_check). */
     @Setter
     @Column(name = "days", nullable = false)
     private Short days;
 
+    // short (klein) statt Short: Hier darf kein null übergeben werden.
     public VacationEntitlement(User user, short year, short days) {
         this.id = new VacationEntitlementId(user.getId(), year);
         this.user = user;
@@ -48,6 +55,7 @@ public class VacationEntitlement {
     }
 
     /** Das Jahr aus dem Schlüssel, damit man nicht immer getId().getYear() schreiben muss. */
+    // Nebeneffekt: MapStruct findet diesen Getter und mappt year automatisch ins DTO.
     public Short getYear() {
         return id.getYear();
     }

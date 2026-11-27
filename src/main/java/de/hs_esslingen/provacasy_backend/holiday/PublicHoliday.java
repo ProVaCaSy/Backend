@@ -17,12 +17,14 @@ import lombok.Setter;
  * Zwischenspeicher der Feiertags-API, dazu der 24.12. und 31.12. als ganze Feiertage.
  * Hat keine Beziehung zu anderen Tabellen.
  */
+// Die einfachste Entity im Projekt: kein @GeneratedValue, keine Beziehungen, kein @Version.
 @Entity
 @Table(name = "public_holiday")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class PublicHoliday {
 
+    // Kein @GeneratedValue: Den Schlüssel (das Datum) geben wir selbst vor, nicht die Datenbank.
     /** Das Datum ist der Primärschlüssel, jeder Tag kommt nur einmal vor. */
     @Id
     @Column(name = "holiday_date", nullable = false, updatable = false)
